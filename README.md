@@ -1,6 +1,6 @@
 # media-sleep-inhibitor
 
-Most applications inhibit sleep through loginctrl on their own but seems like spotify dev decided against it. This small service waits for the spotify dbus service to appear, inherits sleep when media is playing and releases the sleep lock when it is paused.
+Most applications inhibit sleep through loginctrl on their own but seems like spotify devs decided against it. This small service waits for the spotify dbus service to appear, inherits sleep when media is playing and releases the sleep lock when it is paused.
 
 ## Install
 
