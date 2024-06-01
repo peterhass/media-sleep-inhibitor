@@ -1,0 +1,107 @@
+#!/usr/bin/env -S python -u
+import os
+from dasbus.connection import SystemMessageBus, SessionMessageBus
+from dasbus.loop import EventLoop
+from dasbus.unix import GLibClientUnix
+from dasbus.client.proxy import disconnect_proxy
+from pprint import pprint
+
+WHO = "media-sleep-inhibitor"
+SERVICE = "org.mpris.MediaPlayer2.spotify"
+
+session_bus = SessionMessageBus()
+session_proxy = session_bus.proxy
+
+system_bus = SystemMessageBus()
+login_proxy = system_bus.get_proxy(
+  "org.freedesktop.login1",
+  "/org/freedesktop/login1",
+  client=GLibClientUnix
+)
+
+## Sleep Inhibition
+inhibition_lock = None
+def inhibit_sleep():
+  global inhibition_lock
+  print('creating sleep lock')
+  inhibition_lock = login_proxy.Inhibit(
+    "sleep", # what
+    WHO, # who
+    "Spotify is playing media", # why
+    "block" # mode
+  )
+    
+def release_sleep_lock():
+  print("release sleep lock")
+  if inhibition_lock: os.close(inhibition_lock)
+
+## Locating service
+def on_service_registration(on_register, on_deregister):
+  def handle_name_owner_change(name, old_owner, new_owner):
+    if name != SERVICE: return
+    if not old_owner and new_owner:
+        on_register()
+    elif old_owner and not new_owner:
+        on_deregister()
+
+  session_proxy.NameOwnerChanged.connect(handle_name_owner_change)
+
+def is_service_registered():
+  return SERVICE in session_proxy.ListNames()
+
+## Querying media player
+def on_media_playback(proxy, on_play, on_stop):
+  def handle_media_prop_change(iface, prop_changed, prop_invalidated):
+    if iface != "org.mpris.MediaPlayer2.Player": return
+    if not "PlaybackStatus" in prop_changed: return
+
+    status = prop_changed["PlaybackStatus"].get_string()
+
+    match status:
+        case "Playing":
+            on_play()
+        case "Paused" | "Stopped":
+            on_stop()
+
+  proxy.PropertiesChanged.connect(handle_media_prop_change)
+
+def is_media_playing(proxy):
+  return proxy.PlaybackStatus == "Playing"
+
+## Wire up callback hell
+player_proxy = None
+def connect_to_service():
+  global player_proxy
+  assert player_proxy is None
+
+  print("Connecting to spotify service")
+
+  player_proxy = session_bus.get_proxy(
+      SERVICE,
+      "/org/mpris/MediaPlayer2",
+      client=GLibClientUnix
+  )
+
+  if is_media_playing(player_proxy):
+      inhibit_sleep()
+
+  on_media_playback(player_proxy, inhibit_sleep, release_sleep_lock)
+
+def disconnect_service():
+  global player_proxy
+
+  print("Disconnecting spotify service")
+
+  disconnect_proxy(player_proxy)
+  player_proxy = None
+
+  release_sleep_lock()
+
+exists = is_service_registered()
+if exists: connect_to_service()
+on_service_registration(connect_to_service, disconnect_service)
+
+## Required for dasbus observers to do their job
+print("Starting dbus event loop")
+loop = EventLoop()
+loop.run()

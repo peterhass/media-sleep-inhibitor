@@ -1,0 +1,10 @@
+[Unit]
+Description=Media Sleep Inhibitor (Spotify)
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/media-sleep-inhibitor
+Restart=always
+
+[Install]
+WantedBy=default.target
