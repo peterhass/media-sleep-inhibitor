@@ -32,8 +32,12 @@ def inhibit_sleep():
   )
     
 def release_sleep_lock():
+  global inhibition_lock
+  if not inhibition_lock: return
+
   print("release sleep lock")
-  if inhibition_lock: os.close(inhibition_lock)
+  os.close(inhibition_lock)
+  inhibition_lock = None
 
 ## Locating service
 def on_service_registration(on_register, on_deregister):
